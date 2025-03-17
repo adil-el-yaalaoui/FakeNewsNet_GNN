@@ -1,9 +1,21 @@
 import torch
 from sklearn.metrics import f1_score
 import numpy as np
+import logging
 
 
-def train_loop(model,loss_fn,optimizer,train_loader,val_loader,max_epochs,device):
+
+def train_loop(model,loss_fn,optimizer,train_loader,val_loader,max_epochs,device,dataset_name,feature_name):
+
+    file_name="GNN_"+dataset_name+"_"+feature_name+".log"
+
+    logging.basicConfig(
+    filename=file_name,   
+    level=logging.INFO,    
+    format='%(asctime)s -- %(message)s'  
+    )
+
+    
     model.to(device)
     full_loss_list=[]
     full_score_list=[]
@@ -29,8 +41,7 @@ def train_loop(model,loss_fn,optimizer,train_loader,val_loader,max_epochs,device
                 predict = np.where(out_val.detach().cpu().numpy() >= 0, 1, 0)
                 f1_scores_list.append(f1_score(val_batch.y.float().cpu().numpy(),predict,average="micro"))
 
-
-        print("Epoch : ",j+1 ," Loss : ",np.mean(losses), " F1-score val : ",np.mean(f1_scores_list))
+        logging.info(f"Epoch : {j+1} Loss : {np.mean(losses)} F1-score eval : {np.mean(f1_scores_list)}")
         full_loss_list.append(np.mean(losses))
         full_score_list.append(np.mean(f1_scores_list))
 
@@ -49,3 +60,4 @@ def test_loop(model,test_loader,device):
             test_scores.append(f1_score(test_batch.y.float().cpu().numpy(),predict_test,average="micro"))
         
     return np.mean(test_scores)
+
