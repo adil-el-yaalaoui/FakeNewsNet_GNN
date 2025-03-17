@@ -1,0 +1,257 @@
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+
+import torch.nn as nn
+import torch_geometric.nn as graphnn
+from sklearn.metrics import f1_score
+from torch_geometric.datasets import PPI
+from torch_geometric.loader import DataLoader
+BATCH_SIZE = 1
+
+device=torch.device("cuda")
+# Train Dataset
+train_dataset = PPI(root="", split="train")
+train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE)
+# Val Dataset
+val_dataset = PPI(root="", split="val")
+val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
+# Test Dataset
+test_dataset = PPI(root="", split="test")
+test_dataloader = DataLoader(test_dataset, batch_size=BATCH_SIZE)
+
+# Number of features and classes
+n_features, n_classes = train_dataset[0].x.shape[1], train_dataset[0].y.shape[1]
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class GATLayer(nn.Module):
+    def __init__(self,nb_heads,in_feature_size,out_feature_size,activation,concat) :
+        super().__init__()
+        self.nb_heads=nb_heads
+        self.in_feature_size=in_feature_size
+        self.out_feature_size=out_feature_size
+
+        self.linear_proj = nn.Linear(in_feature_size, nb_heads * out_feature_size, bias=False)
+
+        self.scoring_fn_target = nn.Parameter(torch.Tensor(1, nb_heads, out_feature_size))
+        self.scoring_fn_source = nn.Parameter(torch.Tensor(1, nb_heads, out_feature_size))
+
+        self.leakyReLU = nn.LeakyReLU(0.2)  
+        self.softmax = nn.Softmax(dim=-1)  
+        self.activation = activation
+        self.concat=concat
+        self.skip_proj = nn.Linear(in_feature_size, nb_heads * out_feature_size, bias=False)
+
+        self.init_params()
+
+    def init_params(self):
+        nn.init.xavier_uniform_(self.linear_proj.weight)
+        nn.init.xavier_uniform_(self.scoring_fn_target)
+        nn.init.xavier_uniform_(self.scoring_fn_source)
+
+    def lift(self,score_source,score_target,projected_nodes,edge_index):
+        source_index=edge_index[0]
+        targ_index=edge_index[1]
+
+        score_source_lifted=score_source.index_select(0,source_index)
+        score_target_lifted=score_target.index_select(0,targ_index)
+
+        projected_nodes_lifted=projected_nodes.index_select(0,source_index)
+
+        return score_source_lifted,score_target_lifted,projected_nodes_lifted
+
+    def softmax_denominator(self,exp_score_per_edge,edge_index,nb_of_nodes):
+        """
+        This function computes fo each nodes the exponential sum of the neighbor nodes
+        """
+        index_modified=edge_index.unsqueeze(-1).expand_as(exp_score_per_edge)
+
+        neighborhood_sums = torch.zeros((nb_of_nodes,exp_score_per_edge.shape[1]), device=exp_score_per_edge.device)
+
+        neighborhood_sums.scatter_add_(0, index_modified, exp_score_per_edge)
+
+        return neighborhood_sums.index_select(0,edge_index)
+    
+    def softmax_neighborhood(self,score_per_edge,edge_index,nb_of_nodes):
+        """
+        This function computes the exponential of the edge coefficient
+        Then applies the local softmax
+        """
+
+        exp_score_per_edge=(score_per_edge-score_per_edge.max()).exp() #numerical stability
+        denominator=self.softmax_denominator(exp_score_per_edge,edge_index,nb_of_nodes)
+        attentions_per_edge = exp_score_per_edge / (denominator + 1e-16)
+
+        return attentions_per_edge.unsqueeze(-1)
+
+
+    def aggregate_neighbors(self,projected_nodes_attention_weighted,edge_index,x):
+
+
+        out_nodes_features = torch.zeros((x.shape[0],
+                                          projected_nodes_attention_weighted.shape[1],
+                                          projected_nodes_attention_weighted.shape[2]), device=x.device)
+        
+        index_modified=edge_index.unsqueeze(-1).unsqueeze(-1).expand_as(projected_nodes_attention_weighted)
+
+        out_nodes_features.scatter_add_(0, index_modified, projected_nodes_attention_weighted)
+
+        return out_nodes_features
+    
+    def skip_connection(self,in_features,out_features):
+
+        if out_features.shape[-1] == in_features.shape[-1]:  # if FIN == FOUT
+                # unsqueeze does this: (N, FIN) -> (N, 1, FIN), out features are (N, NH, FOUT) so 1 gets broadcast to NH
+                # thus we're basically copying input vectors NH times and adding to processed vectors
+                out_features += in_features.unsqueeze(1)
+        else:
+                # FIN != FOUT so we need to project input feature vectors into dimension that can be added to output
+                # feature vectors. skip_proj adds lots of additional capacity which may cause overfitting.
+                out_features += self.skip_proj(in_features).view(-1, self.nb_heads, self.out_feature_size)
+            
+        
+        if self.concat:
+            # shape = (N, NH, FOUT) -> (N, NH*FOUT)
+            out_features = out_features.view(-1, self.nb_heads * self.out_feature_size)
+        else:
+            # shape = (N, NH, FOUT) -> (N, FOUT)
+            out_features = out_features.mean(dim=1)
+
+        return out_features
+
+    def forward(self,x,edge_index):
+
+        nb_of_nodes=x.shape[0]
+
+        projected_nodes=self.linear_proj(x).view(-1,self.nb_heads,self.out_feature_size) #of shape (N,H,O)
+
+        scores_source = (projected_nodes * self.scoring_fn_source).sum(dim=-1)
+        scores_target = (projected_nodes * self.scoring_fn_target).sum(dim=-1)
+        score_source_lifted,score_target_lifted,projected_nodes_lifted=self.lift(scores_source,scores_target,projected_nodes,edge_index)
+    
+        score_per_edge=self.leakyReLU(score_source_lifted+score_target_lifted)
+        
+        # Now we have the post attention mechanism for source nodes and target nodes
+        # We now apply the softmax only to the neighbors
+
+        attentions_per_edge = self.softmax_neighborhood(score_per_edge, edge_index[1], nb_of_nodes)
+
+        projected_nodes_attention_weighted = projected_nodes_lifted * attentions_per_edge
+        # Final step is to aggregate the same weighted (by attention coeff) nodes with their neighbors
+
+        updated_nodes_features=self.aggregate_neighbors(projected_nodes_attention_weighted,edge_index[1],x)
+
+
+        updated_nodes_features=self.skip_connection(x,updated_nodes_features)
+        
+        #updated_nodes_features=torch.mean(updated_nodes_features,dim=1)
+        return self.activation(updated_nodes_features) if self.activation!=None else updated_nodes_features
+
+
+
+class GAT_Model(nn.Module):
+    def __init__(self, head,final_head,in_feature_size,out_feature_size,nb_classes):
+        super().__init__()
+        self.layer1=GATLayer(nb_heads=head,in_feature_size=in_feature_size,out_feature_size=out_feature_size,activation=nn.ELU(),concat=True)
+
+        self.layer2=GATLayer(nb_heads=head,in_feature_size=head*out_feature_size,out_feature_size=out_feature_size,activation=nn.ELU(),concat=True)
+
+        self.last_layer=GATLayer(nb_heads=final_head,in_feature_size=head*out_feature_size,out_feature_size=nb_classes,activation=None,concat=False)
+
+    def forward(self,x,edge_index):
+        out1=self.layer1(x,edge_index)
+
+        out2=self.layer2(out1,edge_index)
+
+        out3=self.last_layer(out2,edge_index)
+
+        return out3
+    
+import gc
+
+def evaluate(model, dataloader):
+    score_list_batch = []
+
+    model.eval()
+    for i, batch in enumerate(dataloader):
+        batch=batch.to(device)
+        output = model(batch.x, batch.edge_index)
+        predict = np.where(output.detach().cpu().numpy() >= 0, 1, 0)
+        score = f1_score(batch.y.cpu().numpy(), predict, average="micro")
+        score_list_batch.append(score)
+        del output
+
+        gc.collect()
+    return np.array(score_list_batch).mean()
+
+def test_score(model):
+    score_test=[]
+    for j,batchs in enumerate(test_dataloader):
+        batchs=batchs.to(device)
+        output=model(batchs.x,batchs.edge_index)
+        predict = np.where(output.detach().cpu().numpy() >= 0, 1, 0)
+        score = f1_score(batchs.y.cpu().numpy(), predict, average="micro")
+        score_test.append(score)
+
+    return np.array(score_test).mean()
+
+
+def train(model, loss_fcn, optimizer, max_epochs, train_dataloader, val_dataloader):
+    epoch_list = []
+    scores_list = []
+
+    # loop over epochs
+    for epoch in range(max_epochs):
+        model.train()
+        losses = []
+        # loop over batches
+        for i, train_batch in enumerate(train_dataloader):
+            optimizer.zero_grad()
+            # logits is the output of the model
+            train_batch=train_batch.to(device)
+            logits = model(train_batch.x, train_batch.edge_index)
+            # compute the loss
+            loss = loss_fcn(logits, train_batch.y)
+            # optimizer step
+            loss.backward()
+            optimizer.step()
+            losses.append(loss.item())
+            del logits,loss
+        gc.collect()
+        loss_data = np.array(losses).mean()
+        print("Epoch {:05d} | Loss: {:.4f}".format(epoch + 1, loss_data))
+
+        
+        # evaluate the model on the validation set
+        # computes the f1-score (see next function)
+        score = evaluate(model, val_dataloader)
+        print("F1-Score: {:.4f}".format(score))
+        scores_list.append(score)
+        epoch_list.append(epoch)
+
+        gc.collect()
+    # test score
+    test=test_score(model)
+    torch.save(model.state_dict(), "model_GAT_100_epochs.pth")
+    print(test)
+    return epoch_list, scores_list,test
+
+""" model=GAT_Model(4,6,50,256,121).to(device)
+epochs=100
+criterion=nn.BCEWithLogitsLoss()
+optim=torch.optim.Adam(model.parameters(),lr=0.005)
+new=train(model,criterion,optim,epochs,train_dataloader,val_dataloader)
+
+
+
+
+### This is the part we will run in the inference to grade your model
+## Load the model
+  # !  Important : No argument
+model.load_state_dict(torch.load("model_GAT_100_epochs.pth", weights_only=True))
+model.eval()
+print("Model loaded successfully") """
