@@ -5,12 +5,13 @@ import logging
 
 
 
-def train_loop(model,loss_fn,optimizer,train_loader,val_loader,max_epochs,device,dataset_name,feature_name):
+def train_loop(model,loss_fn,train_loader,val_loader,max_epochs,device,dataset_name,feature_name,lr=0.005):
 
-    file_name="GNN_"+dataset_name+"_"+feature_name+".log"
-
+    file_name="Results/GNN_"+dataset_name+"_"+feature_name+"_"+model.name+".log"
+    optimizer=torch.optim.Adam(model.parameters(),lr=lr)
     logging.basicConfig(
     filename=file_name,   
+    filemode="w",
     level=logging.INFO,    
     format='%(asctime)s -- %(message)s'  
     )
@@ -26,7 +27,7 @@ def train_loop(model,loss_fn,optimizer,train_loader,val_loader,max_epochs,device
             batch=batch.to(device)
             optimizer.zero_grad()
             batch.y=batch.y.to(torch.float32)
-            
+            print(batch.x.size())
             out=model(batch.x,batch.edge_index,batch.batch)
             loss=loss_fn(out,batch.y)
             loss.backward()
@@ -42,6 +43,7 @@ def train_loop(model,loss_fn,optimizer,train_loader,val_loader,max_epochs,device
                 f1_scores_list.append(f1_score(val_batch.y.float().cpu().numpy(),predict,average="micro"))
 
         logging.info(f"Epoch : {j+1} Loss : {np.mean(losses)} F1-score eval : {np.mean(f1_scores_list)}")
+        
         full_loss_list.append(np.mean(losses))
         full_score_list.append(np.mean(f1_scores_list))
 
