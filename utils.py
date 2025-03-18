@@ -27,7 +27,6 @@ def train_loop(model,loss_fn,train_loader,val_loader,max_epochs,device,dataset_n
             batch=batch.to(device)
             optimizer.zero_grad()
             batch.y=batch.y.to(torch.float32)
-            print(batch.x.size())
             out=model(batch.x,batch.edge_index,batch.batch)
             loss=loss_fn(out,batch.y)
             loss.backward()
