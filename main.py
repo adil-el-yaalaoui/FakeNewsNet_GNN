@@ -9,7 +9,7 @@ from models import GATClassifier,GNNClassifier, GenericModel
 from utils import train_loop, test_loop
 import os
 
-if not os.path.exists("Resuts"):
+if not os.path.exists("Results"):
     os.makedirs("Results")
 
 dataset_name="gossipcop"
@@ -47,7 +47,7 @@ epochs=25
 device=torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 print(device)
 if __name__=="__main__":
-    new_gat,losses,scores,=train_loop(model=generic,
+    new_gat,losses,scores,=train_loop(model=generic_sage,
                                   loss_fn=criterion,
                                   train_loader=train_loader,
                                   val_loader=val_loader,
