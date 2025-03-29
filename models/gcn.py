@@ -54,7 +54,7 @@ class GCNModel(nn.Module):
 
         #self.layer2=GCNLayer(in_size=hidden_dim,out_size=num_class)
 
-        self.lin = torch.nn.Linear(hidden_dim, 1)
+        self.lin = torch.nn.Linear(hidden_dim, num_class)
 
     
     def forward(self,x,edge_index,batch):
