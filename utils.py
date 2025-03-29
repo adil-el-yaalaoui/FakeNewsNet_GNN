@@ -2,12 +2,17 @@ import torch
 from sklearn.metrics import f1_score,accuracy_score
 import numpy as np
 import logging
-
+import os
 
 
 def train_loop(model,loss_fn,train_loader,val_loader,test_loader,max_epochs,device,dataset_name,feature_name,lr=0.005):
 
-    file_name="Results/"+dataset_name+"/"+feature_name+"_"+model.name+".log"
+    file_name="Results/"+dataset_name+"/"+feature_name+"/"
+    if not os.path.exists(file_name):
+        os.makedirs(file_name)
+    
+    file_name=file_name+model.name+".log"
+    
     optimizer=torch.optim.Adam(model.parameters(),lr=lr)
     logging.basicConfig(
     filename=file_name,   
