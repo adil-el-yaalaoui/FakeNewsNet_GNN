@@ -3,11 +3,9 @@ import torch.nn as nn
 from torch_geometric.datasets import UPFD
 from torch_geometric.loader import DataLoader
 from torch_geometric.transforms import ToUndirected
-import numpy as np
-from sklearn.metrics import f1_score
 from models import GATClassifier,GNNClassifier, GenericModel,GCNModel,SageModel
 
-from utils import train_loop, test_loop
+from utils import train_loop
 import os
 
 if not os.path.exists("Results"):
@@ -35,24 +33,28 @@ elif feature_name=="bert":
 elif feature_name=="profile":
     feature_size=10
 
+hidden_dim=512
+### List of models ### 
+    
+custom_gat=GATClassifier(feature_size,hidden_dim) 
+real_gat=GNNClassifier(feature_size,hidden_dim)
 
-gat_perso=GATClassifier(feature_size,1024) 
-classif=GNNClassifier(feature_size,1024)
+custom_gcn=GCNModel(in_channels=feature_size,hidden_dim=hidden_dim,num_class=1)
+real_gcn=GenericModel(num_features=feature_size,hidden_dim=hidden_dim,num_classes=1,model="gcn",concat=True)
 
-gcn_model=GCNModel(in_channels=feature_size,hidden_dim=1024,num_class=1)
+custom_sage=SageModel(feature_size=feature_size,hidden_dim=hidden_dim,n_classes=1)
+real_sage = GenericModel(num_features=feature_size,hidden_dim=hidden_dim,num_classes=1,model="sage",concat=True)
 
-sage=SageModel(feature_size=feature_size,hidden_dim=60,n_classes=1)
 
-generic=GenericModel(num_features=feature_size,hidden_dim=1024,num_classes=1,model="gcn",concat=True)
-generic_sage = GenericModel(num_features=feature_size,hidden_dim=1024,num_classes=1,model="sage",concat=True)
-
+### Training parameters ###
 criterion=nn.BCEWithLogitsLoss()
-epochs=50
+epochs=30
 
 device=torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 print(device)
+
 if __name__=="__main__":
-    new_gat,losses,scores,=train_loop(model=gat_perso,
+    new_gat,losses,scores,=train_loop(model=real_gat,
                                   loss_fn=criterion,
                                   train_loader=train_loader,
                                   val_loader=val_loader,
@@ -61,4 +63,4 @@ if __name__=="__main__":
                                   device=device,
                                   dataset_name=dataset_name,
                                   feature_name=feature_name,
-                                  lr=0.05)
+                                  lr=0.005)
