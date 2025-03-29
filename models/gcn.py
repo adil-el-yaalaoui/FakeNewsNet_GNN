@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch_geometric.nn import global_max_pool
 from torch_geometric.utils import add_self_loops,degree
 
-device = torch.device("mps") if torch.mps.is_available() else torch.device("cpu")
+device = torch.device("cpu")
 
 class GCNLayer(nn.Module):
     def __init__(self, in_size,out_size) -> None:
@@ -21,8 +21,8 @@ class GCNLayer(nn.Module):
         Takes as an input the edge_index vector and returns the adjency matrix of the graph
         """
         edge_index_self_loops,_=add_self_loops(edge_index)
-        values = torch.ones(edge_index.shape[1]) 
-        adjacency_sparse = torch.sparse_coo_tensor(edge_index, values, (num_nodes, num_nodes),device=device)
+        values = torch.ones(edge_index_self_loops.shape[1]) 
+        adjacency_sparse = torch.sparse_coo_tensor(edge_index_self_loops, values, (num_nodes, num_nodes))
 
         return adjacency_sparse
 
@@ -31,8 +31,9 @@ class GCNLayer(nn.Module):
         num_nodes=x.shape[0]
         adjacency_matrix=self.transform_adj_matrix(edge_index,num_nodes)
 
-        degree_mat=torch.diag(torch.pow(degree(edge_index[0]),exponent=-0.5))
-
+        degree_mat_values = torch.pow(degree(edge_index[0]), exponent=-0.5)
+        indices = torch.arange(num_nodes, device=device).unsqueeze(0).repeat(2, 1)
+        degree_mat = torch.sparse_coo_tensor(indices, degree_mat_values, (num_nodes, num_nodes))
 
         degree_forward=torch.sparse.mm(degree_mat,adjacency_matrix)
 
@@ -52,8 +53,6 @@ class GCNModel(nn.Module):
 
         self.layer1=GCNLayer(in_size=in_channels,out_size=hidden_dim)
 
-        #self.layer2=GCNLayer(in_size=hidden_dim,out_size=num_class)
-
         self.lin = torch.nn.Linear(hidden_dim, num_class)
 
     
@@ -63,6 +62,5 @@ class GCNModel(nn.Module):
 
         out2=global_max_pool(out1,batch)
 
-        final_out=self.lin(out2
-                           )
+        final_out=self.lin(out2)
         return final_out.squeeze(1)
