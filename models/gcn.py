@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch_geometric.nn import global_max_pool, GCNConv, SAGEConv, SimpleConv
+from torch_geometric.nn import global_max_pool
 from torch_geometric.utils import add_self_loops,degree
 
 device = torch.device("mps") if torch.mps.is_available() else torch.device("cpu")
