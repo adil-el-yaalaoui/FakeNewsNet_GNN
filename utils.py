@@ -7,7 +7,7 @@ import logging
 
 def train_loop(model,loss_fn,train_loader,val_loader,test_loader,max_epochs,device,dataset_name,feature_name,lr=0.005):
 
-    file_name="Results/GNN_"+dataset_name+"_"+feature_name+"_"+model.name+".log"
+    file_name="Results/"+dataset_name+"/"+feature_name+"_"+model.name+".log"
     optimizer=torch.optim.Adam(model.parameters(),lr=lr)
     logging.basicConfig(
     filename=file_name,   
@@ -55,7 +55,6 @@ def train_loop(model,loss_fn,train_loader,val_loader,test_loader,max_epochs,devi
 
 def test_loop(model,test_loader,device):
     model.to(device)
-
     with torch.no_grad():
         model.eval()
         for test_batch in test_loader:
