@@ -48,7 +48,7 @@ class GCNModel(nn.Module):
     def __init__(self, in_channels,hidden_dim,num_class) -> None:
         super().__init__()
 
-        self.name="gcn_perso"
+        self.name="custom_gcn"
 
         self.layer1=GCNLayer(in_size=in_channels,out_size=hidden_dim)
 

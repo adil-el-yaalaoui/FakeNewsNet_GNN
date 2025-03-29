@@ -179,7 +179,7 @@ class GATClassifier(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels):
         super().__init__()
         self.gat=GAT_Model(head=4,final_head=6,in_feature_size=in_channels,out_feature_size=hidden_channels,nb_classes=1)
-        self.name="gat_perso"
+        self.name="custom_gat"
 
     def forward(self,x,edge_index,batch):
         x=self.gat(x,edge_index)
