@@ -11,16 +11,22 @@ import os
 if not os.path.exists("Results"):
     os.makedirs("Results")
 
-dataset_name="politifact"
-feature_name="spacy"
+dataset_name="gossipcop"
+feature_name="bert"
 
+
+
+if dataset_name=="politifact":
+    batch_size=32
+else:
+    batch_size=128
 
 train_dataset = UPFD("", dataset_name, feature_name, 'train', ToUndirected())
 val_dataset = UPFD("", dataset_name, feature_name, 'val', ToUndirected())
 test_dataset = UPFD("", dataset_name, feature_name, 'test', ToUndirected())
 
-train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=128, shuffle=False)
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 test_loader = DataLoader(test_dataset, batch_size=len(test_dataset), shuffle=False)
 
 
@@ -32,6 +38,9 @@ elif feature_name=="bert":
 
 elif feature_name=="profile":
     feature_size=10
+
+elif feature_name=="content":
+    feature_size=310
 
 hidden_dim=512
 ### List of models ### 
@@ -54,7 +63,7 @@ device=torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"
 print(device)
 
 if __name__=="__main__":
-    new_gat,losses,scores,=train_loop(model=real_sage,
+    new_gat,losses,scores,=train_loop(model=custom_gat,
                                   loss_fn=criterion,
                                   train_loader=train_loader,
                                   val_loader=val_loader,
@@ -63,4 +72,4 @@ if __name__=="__main__":
                                   device=device,
                                   dataset_name=dataset_name,
                                   feature_name=feature_name,
-                                  lr=0.005)
+                                  lr=0.0005)
